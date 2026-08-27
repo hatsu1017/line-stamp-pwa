@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+<title>スタンプ余白拡張ツール</title>
+
+<!-- PWA -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#FF6B5E">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="スタンプ余白">
+<meta name="description" content="LINEスタンプ用5×5・25マスの透明PNGを、大きさそのままで間隔だけ広げるツール。画像処理はすべて端末内で完結します。">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="apple-touch-icon" sizes="152x152" href="icons/icon-152.png">
+<link rel="apple-touch-icon" sizes="167x167" href="icons/icon-167.png">
+<link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
+
+<style>
+  :root{
+    --bg: #FAF6EF;
+    --paper: #FFFFFF;
+    --line: #E6DFD1;
+    --line-strong: #D8CFBB;
+    --ink: #2B2A26;
+    --ink-soft: #7A756A;
+    --coral: #FF6B5E;
+    --coral-dark: #E8503F;
+    --mint: #2FBE8F;
+    --mint-dark: #22A47A;
+    --shadow: 0 2px 10px rgba(43,42,38,0.06), 0 1px 2px rgba(43,42,38,0.05);
+    --font-display: 'Hiragino Maru Gothic ProN', 'UD Digi Kyokasho N-B', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-body: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Yu Gothic', sans-serif;
+  }
+  *{ box-sizing: border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background: var(--bg);
+    background-image:
+      radial-gradient(var(--line) 1px, transparent 1px);
+    background-size: 22px 22px;
+    color: var(--ink);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .wrap{
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 28px 16px 60px;
+  }
+  header{
+    margin-bottom: 22px;
+  }
+  .eyebrow{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    color: var(--coral-dark);
+    margin-bottom: 6px;
+  }
+  .eyebrow .dot{
+    width:6px;height:6px;border-radius:50%;
+    background: var(--coral);
+    display:inline-block;
+  }
+  h1{
+    font-family: var(--font-display);
+    font-weight: 900;
+    font-size: 26px;
+    line-height: 1.35;
+    margin: 0 0 8px;
+    letter-spacing: .01em;
+  }
+  header p{
+    margin: 0;
+    font-size: 13.5px;
+    color: var(--ink-soft);
+    line-height: 1.7;
+  }
+
+  .card{
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    box-shadow: var(--shadow);
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+
+  /* upload */
+  .dropzone{
+    border: 2px dashed var(--line-strong);
+    border-radius: 14px;
+    padding: 34px 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .15s ease, background .15s ease;
+    background: repeating-linear-gradient(135deg, transparent, transparent 10px);
+  }
+  .dropzone:hover, .dropzone.drag{
+    border-color: var(--coral);
+    background: #FFF6F4;
+  }
+  .dropzone .icon{
+    width: 46px; height:46px;
+    margin: 0 auto 12px;
+    border-radius: 12px;
+    background: #FFF1EE;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .dropzone .icon svg{ width:22px; height:22px; }
+  .dropzone .main{
+    font-weight: 700;
+    font-size: 14.5px;
+    margin-bottom: 4px;
+  }
+  .dropzone .sub{
+    font-size: 12px;
+    color: var(--ink-soft);
+  }
+  input[type=file]{ display:none; }
+
+  .filebar{
+    display:flex;
+    align-items:center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    margin-top: 10px;
+  }
+  .filebar button{
+    background:none;
+    border: none;
+    color: var(--coral-dark);
+    font-weight: 700;
+    font-size: 12.5px;
+    cursor: pointer;
+    padding: 4px 0;
+  }
+
+  /* section title */
+  .section-title{
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 14px;
+    margin: 0 0 14px;
+    display:flex;
+    align-items:baseline;
+    gap: 8px;
+  }
+  .section-title .num{
+    font-size: 11px;
+    color: var(--coral-dark);
+    background: #FFF1EE;
+    border-radius: 999px;
+    padding: 2px 8px;
+    font-weight: 700;
+  }
+
+  /* slider */
+  .slider-row{
+    display:flex;
+    align-items:center;
+    gap: 14px;
+  }
+  input[type=range]{
+    flex: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--line);
+    outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance: none;
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: var(--coral);
+    border: 3px solid #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+    cursor: pointer;
+  }
+  input[type=range]::-moz-range-thumb{
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: var(--coral);
+    border: 3px solid #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+    cursor: pointer;
+    border: none;
+  }
+  .slider-val{
+    font-family: var(--font-display);
+    font-weight: 900;
+    font-size: 20px;
+    color: var(--coral-dark);
+    min-width: 62px;
+    text-align: right;
+  }
+  .ticks{
+    display:flex;
+    justify-content: space-between;
+    font-size: 10.5px;
+    color: var(--ink-soft);
+    margin-top: 8px;
+    padding: 0 2px;
+  }
+  .ticks span{ position:relative; }
+
+  /* size info */
+  .sizes{
+    display:flex;
+    gap: 10px;
+    margin-top: 16px;
+  }
+  .size-box{
+    flex:1;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 12px 14px;
+  }
+  .size-box .label{
+    font-size: 11px;
+    color: var(--ink-soft);
+    font-weight: 600;
+    margin-bottom: 3px;
+  }
+  .size-box .val{
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 15px;
+  }
+  .size-box.out .val{ color: var(--mint-dark); }
+  .size-box .arrow{ color: var(--ink-soft); font-weight:400; font-size:12px; }
+
+  /* preview */
+  .preview-head{
+    display:flex;
+    align-items:center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .toggle{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    font-size: 12px;
+    color: var(--ink-soft);
+    cursor:pointer;
+    user-select:none;
+  }
+  .toggle input{ accent-color: var(--coral); width:15px; height:15px; }
+
+  .preview-stage{
+    background:
+      linear-gradient(45deg, #f0ede4 25%, transparent 25%),
+      linear-gradient(-45deg, #f0ede4 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #f0ede4 75%),
+      linear-gradient(-45deg, transparent 75%, #f0ede4 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+    background-color: #fbfaf7;
+    border-radius: 14px;
+    border: 1px solid var(--line);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding: 10px;
+    min-height: 180px;
+    overflow: hidden;
+  }
+  #previewCanvas{
+    max-width: 100%;
+    max-height: 60vh;
+    display:block;
+    image-rendering: -webkit-optimize-contrast;
+  }
+  .placeholder{
+    color: var(--ink-soft);
+    font-size: 13px;
+    text-align:center;
+    padding: 30px 10px;
+  }
+
+  .save-btn{
+    width: 100%;
+    margin-top: 18px;
+    border: none;
+    border-radius: 999px;
+    padding: 15px 20px;
+    background: var(--mint);
+    color: #fff;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: .02em;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(47,190,143,0.35);
+    transition: transform .08s ease, background .15s ease;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+  }
+  .save-btn:active{ transform: translateY(1px) scale(0.99); }
+  .save-btn:disabled{
+    background: #C9C4B8;
+    box-shadow: none;
+    cursor: not-allowed;
+  }
+
+  .hint{
+    font-size: 11.5px;
+    color: var(--ink-soft);
+    margin-top: 10px;
+    line-height: 1.6;
+  }
+
+  .disabled-card{
+    opacity: .45;
+    pointer-events: none;
+  }
+
+  footer{
+    text-align:center;
+    font-size: 11px;
+    color: var(--ink-soft);
+    margin-top: 22px;
+    line-height:1.8;
+  }
+
+  .privacy-badge{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    background: #EFFAF5;
+    border: 1px solid #CDEEE0;
+    color: var(--mint-dark);
+    font-size: 11.5px;
+    font-weight: 700;
+    padding: 6px 12px;
+    border-radius: 999px;
+    margin-bottom: 14px;
+  }
+  .privacy-badge svg{ width:13px; height:13px; }
+
+  @media (max-width: 380px){
+    h1{ font-size: 22px; }
+    .sizes{ flex-direction: column; }
+  }
+
+  /* save modal (long-press-to-save flow, works in Safari + standalone PWA) */
+  .modal-overlay{
+    display:none;
+    position: fixed;
+    inset: 0;
+    background: rgba(43,42,38,0.55);
+    z-index: 100;
+    align-items:flex-end;
+    justify-content:center;
+    padding: 0;
+  }
+  .modal-overlay.show{ display:flex; }
+  .modal-sheet{
+    background: var(--paper);
+    width: 100%;
+    max-width: 640px;
+    max-height: 90vh;
+    overflow-y: auto;
+    border-radius: 20px 20px 0 0;
+    padding: 18px 18px calc(26px + env(safe-area-inset-bottom));
+    box-shadow: 0 -6px 24px rgba(0,0,0,0.2);
+  }
+  .modal-head{
+    display:flex;
+    align-items:center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .modal-head .title{
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 15px;
+  }
+  .modal-close{
+    border:none;
+    background: var(--bg);
+    width: 30px; height:30px;
+    border-radius: 50%;
+    font-size: 16px;
+    color: var(--ink-soft);
+    cursor:pointer;
+    line-height:1;
+  }
+  .save-instruction{
+    background: #FFF6F4;
+    border: 1px solid #FFDAD3;
+    border-radius: 12px;
+    padding: 12px 14px;
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--coral-dark);
+    font-weight: 600;
+    margin-bottom: 14px;
+  }
+  .save-img-stage{
+    background:
+      linear-gradient(45deg, #f0ede4 25%, transparent 25%),
+      linear-gradient(-45deg, #f0ede4 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #f0ede4 75%),
+      linear-gradient(-45deg, transparent 75%, #f0ede4 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+    background-color: #fbfaf7;
+    border-radius: 14px;
+    border: 1px solid var(--line);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding: 10px;
+  }
+  #saveImage{
+    max-width: 100%;
+    max-height: 55vh;
+    display:block;
+    -webkit-touch-callout: default;
+  }
+  .modal-actions{
+    display:flex;
+    flex-direction:column;
+    gap: 10px;
+    margin-top: 16px;
+  }
+  .btn-secondary{
+    width:100%;
+    border: 1px solid var(--line-strong);
+    background: var(--paper);
+    color: var(--ink);
+    border-radius: 999px;
+    padding: 13px 18px;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 14px;
+    cursor:pointer;
+    text-align:center;
+    text-decoration:none;
+    display:block;
+  }
+
+  /* home screen instructions */
+  .steps{
+    margin: 0;
+    padding-left: 20px;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    line-height: 1.9;
+  }
+  .steps li{ margin-bottom: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow"><span class="dot"></span>LINE STAMP TOOL</div>
+    <h1>スタンプ余白拡張ツール</h1>
+    <div class="privacy-badge">
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3L4 6.5V11C4 15.5 7.4 19.7 12 21C16.6 19.7 20 15.5 20 11V6.5L12 3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      画像は端末内だけで処理・送信されません
+    </div>
+    <p>5×5・25個のスタンプが並んだ透明PNGを、大きさそのままで間隔だけ広げます。スタンプ自体の拡大・縮小・生成は行いません。</p>
+  </header>
+
+  <!-- 1. upload -->
+  <div class="card">
+    <div class="section-title"><span class="num">1</span>PNG画像を選択</div>
+    <div class="dropzone" id="dropzone">
+      <div class="icon">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 15V4M12 4L8 8M12 4L16 8" stroke="#FF6B5E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M4 15V17.5C4 18.8807 5.11929 20 6.5 20H17.5C18.8807 20 20 18.8807 20 17.5V15" stroke="#FF6B5E" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="main">タップして画像を選択</div>
+      <div class="sub">5×5・25マスの背景透明PNG</div>
+    </div>
+    <input type="file" id="fileInput" accept="image/png">
+    <div class="filebar" id="filebar" style="display:none;">
+      <span id="fileName"></span>
+      <button id="changeBtn" type="button">画像を変更</button>
+    </div>
+  </div>
+
+  <!-- 2. slider -->
+  <div class="card disabled-card" id="controlsCard">
+    <div class="section-title"><span class="num">2</span>余白の広さ</div>
+    <div class="slider-row">
+      <input type="range" id="spacingSlider" min="100" max="200" step="20" value="100">
+      <div class="slider-val" id="spacingVal">100%</div>
+    </div>
+    <div class="ticks">
+      <span>100%</span><span>120%</span><span>140%</span><span>160%</span><span>180%</span><span>200%</span>
+    </div>
+
+    <div class="sizes">
+      <div class="size-box">
+        <div class="label">元画像サイズ</div>
+        <div class="val" id="origSize">— × —</div>
+      </div>
+      <div class="size-box out">
+        <div class="label">出力画像サイズ</div>
+        <div class="val" id="outSize">— × —</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. preview -->
+  <div class="card disabled-card" id="previewCard">
+    <div class="preview-head">
+      <div class="section-title" style="margin:0;"><span class="num">3</span>プレビュー</div>
+      <label class="toggle"><input type="checkbox" id="gridToggle" checked>基準グリッドを表示(参考)</label>
+    </div>
+    <div class="preview-stage">
+      <canvas id="previewCanvas" style="display:none;"></canvas>
+      <div class="placeholder" id="placeholder">画像を選択するとここにプレビューが表示されます</div>
+    </div>
+
+    <button class="save-btn" id="saveBtn" disabled>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3V15M12 15L8 11M12 15L16 11" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 17V19C5 20.1046 5.89543 21 7 21H17C18.1046 21 19 20.1046 19 19V17" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>
+      画像を保存
+    </button>
+    <div class="hint">マス目で機械的に切るのではなく、透明部分の境界を認識してスタンプの範囲を検出しています。各スタンプのピクセルはそのまま使用し、配置座標のみを変更しています。拡大・縮小・AI補正は行いません。</div>
+  </div>
+
+  <!-- home screen instructions -->
+  <div class="card" id="a2hsCard">
+    <div class="section-title"><span class="num">+</span>ホーム画面に追加する</div>
+    <ol class="steps">
+      <li>Safari下部(または上部)の共有アイコン(四角に↑)をタップ</li>
+      <li>メニューを下にスクロールし「ホーム画面に追加」をタップ</li>
+      <li>名前を確認して右上の「追加」をタップ</li>
+    </ol>
+  </div>
+
+  <footer>
+    大きさ・比率・解像度・色・透明度は元画像のまま維持されます<br>
+    このツールはオフラインでも動作します
+  </footer>
+</div>
+
+<!-- save modal -->
+<div class="modal-overlay" id="saveModal">
+  <div class="modal-sheet">
+    <div class="modal-head">
+      <div class="title">画像を保存</div>
+      <button class="modal-close" id="modalClose" type="button">×</button>
+    </div>
+    <div class="save-instruction" id="saveInstruction">
+      画像を長押しして「写真に保存」をタップすると、写真フォルダに保存できます。
+    </div>
+    <div class="save-img-stage">
+      <img id="saveImage" alt="出力画像プレビュー">
+    </div>
+    <div class="modal-actions">
+      <button class="save-btn" id="shareBtn" type="button" style="display:none;">
+        共有して保存
+      </button>
+      <a class="btn-secondary" id="downloadLink" download="stamp_spaced.png">ファイルとしてダウンロード(PC/Android向け)</a>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const GRID = 5;
+  const ALPHA_THRESHOLD = 10;
+
+  const fileInput = document.getElementById('fileInput');
+  const dropzone = document.getElementById('dropzone');
+  const filebar = document.getElementById('filebar');
+  const fileNameEl = document.getElementById('fileName');
+  const changeBtn = document.getElementById('changeBtn');
+
+  const controlsCard = document.getElementById('controlsCard');
+  const previewCard = document.getElementById('previewCard');
+  const spacingSlider = document.getElementById('spacingSlider');
+  const spacingVal = document.getElementById('spacingVal');
+  const origSizeEl = document.getElementById('origSize');
+  const outSizeEl = document.getElementById('outSize');
+
+  const previewCanvas = document.getElementById('previewCanvas');
+  const placeholder = document.getElementById('placeholder');
+  const gridToggle = document.getElementById('gridToggle');
+  const saveBtn = document.getElementById('saveBtn');
+
+  const pctx = previewCanvas.getContext('2d');
+
+  // working (offscreen, full-res) canvas
+  const outCanvas = document.createElement('canvas');
+  const octx = outCanvas.getContext('2d');
+
+  let srcW = 0, srcH = 0;
+  let cells = [];   // { row, col, canvas, w, h }  -- canvas holds only the trimmed stamp pixels at native resolution
+
+  function boundsFor(total){
+    const arr = [0];
+    for(let i=1;i<GRID;i++) arr.push(Math.round(total * i / GRID));
+    arr.push(total);
+    return arr;
+  }
+
+  // Find connected regions of non-transparent pixels (8-connectivity),
+  // instead of slicing the image at fixed row/column lines.
+  // This means a stamp is never cut just because it crosses a nominal grid line.
+  function findComponents(data, width, height){
+    const size = width * height;
+    const label = new Int32Array(size).fill(-1);
+    const stack = new Int32Array(size); // reused scratch stack
+    const components = [];
+
+    for(let i=0; i<size; i++){
+      if(label[i] !== -1) continue;
+      const a = data[i*4 + 3];
+      if(a <= ALPHA_THRESHOLD){ label[i] = -2; continue; } // transparent, mark as done
+
+      // flood fill this component
+      let sp = 0;
+      stack[sp++] = i;
+      label[i] = components.length;
+
+      let minX = width, minY = height, maxX = -1, maxY = -1, count = 0, sumX = 0, sumY = 0;
+
+      while(sp > 0){
+        const idx = stack[--sp];
+        const x = idx % width;
+        const y = (idx / width) | 0;
+
+        if(x < minX) minX = x;
+        if(x > maxX) maxX = x;
+        if(y < minY) minY = y;
+        if(y > maxY) maxY = y;
+        count++; sumX += x; sumY += y;
+
+        for(let dy=-1; dy<=1; dy++){
+          const ny = y + dy;
+          if(ny < 0 || ny >= height) continue;
+          for(let dx=-1; dx<=1; dx++){
+            if(dx===0 && dy===0) continue;
+            const nx = x + dx;
+            if(nx < 0 || nx >= width) continue;
+            const nIdx = ny*width + nx;
+            if(label[nIdx] !== -1) continue;
+            if(data[nIdx*4+3] <= ALPHA_THRESHOLD){ label[nIdx] = -2; continue; }
+            label[nIdx] = components.length;
+            stack[sp++] = nIdx;
+          }
+        }
+      }
+
+      components.push({
+        minX, minY, maxX, maxY,
+        cx: sumX / count, cy: sumY / count,
+        count
+      });
+    }
+    return components;
+  }
+
+  function extractCells(sourceCanvas){
+    cells = [];
+    const sctx = sourceCanvas.getContext('2d');
+    const imgData = sctx.getImageData(0, 0, srcW, srcH);
+    const data = imgData.data;
+
+    const components = findComponents(data, srcW, srcH);
+
+    // nominal 5x5 centers, used only to decide which of the 25 stamps
+    // each detected shape belongs to (not used to crop pixels)
+    const colB = boundsFor(srcW);
+    const rowB = boundsFor(srcH);
+    const centers = [];
+    for(let row=0; row<GRID; row++){
+      for(let col=0; col<GRID; col++){
+        centers.push({
+          row, col,
+          x: (colB[col] + colB[col+1]) / 2,
+          y: (rowB[row] + rowB[row+1]) / 2
+        });
+      }
+    }
+
+    // group components by nearest nominal center -> up to 25 groups.
+    // pieces belonging to one stamp (separate letters, dots, strokes) will
+    // all be nearest to the same center and end up in the same group.
+    const groups = new Map(); // key "row-col" -> {row,col,minX,minY,maxX,maxY}
+    components.forEach(c => {
+      let best = -1, bestDist = Infinity;
+      for(let i=0; i<centers.length; i++){
+        const d = (c.cx-centers[i].x)**2 + (c.cy-centers[i].y)**2;
+        if(d < bestDist){ bestDist = d; best = i; }
+      }
+      const center = centers[best];
+      const key = center.row + '-' + center.col;
+      if(!groups.has(key)){
+        groups.set(key, { row: center.row, col: center.col, minX: c.minX, minY: c.minY, maxX: c.maxX, maxY: c.maxY });
+      } else {
+        const g = groups.get(key);
+        if(c.minX < g.minX) g.minX = c.minX;
+        if(c.minY < g.minY) g.minY = c.minY;
+        if(c.maxX > g.maxX) g.maxX = c.maxX;
+        if(c.maxY > g.maxY) g.maxY = c.maxY;
+      }
+    });
+
+    groups.forEach(g => {
+      const bw = g.maxX - g.minX + 1;
+      const bh = g.maxY - g.minY + 1;
+      const stampCanvas = document.createElement('canvas');
+      stampCanvas.width = bw;
+      stampCanvas.height = bh;
+      // draw straight from the source canvas, pixel-for-pixel, no scaling
+      stampCanvas.getContext('2d').drawImage(
+        sourceCanvas,
+        g.minX, g.minY, bw, bh,
+        0, 0, bw, bh
+      );
+      cells.push({ row: g.row, col: g.col, canvas: stampCanvas, w: bw, h: bh });
+    });
+  }
+
+  function render(){
+    if(!srcW || !srcH) return;
+
+    const scale = Number(spacingSlider.value) / 100;
+    const outW = Math.round(srcW * scale);
+    const outH = Math.round(srcH * scale);
+
+    outCanvas.width = outW;
+    outCanvas.height = outH;
+    octx.clearRect(0,0,outW,outH);
+
+    const newColBounds = boundsFor(outW);
+    const newRowBounds = boundsFor(outH);
+
+    cells.forEach(cell => {
+      const nx0 = newColBounds[cell.col], nx1 = newColBounds[cell.col+1];
+      const ny0 = newRowBounds[cell.row], ny1 = newRowBounds[cell.row+1];
+      const ncw = nx1 - nx0, nch = ny1 - ny0;
+
+      // center the (unresized) stamp inside its new, larger cell
+      const dx = nx0 + Math.round((ncw - cell.w) / 2);
+      const dy = ny0 + Math.round((nch - cell.h) / 2);
+
+      octx.drawImage(cell.canvas, dx, dy);
+    });
+
+    if(gridToggle.checked){
+      octx.save();
+      octx.strokeStyle = 'rgba(255,107,94,0.55)';
+      octx.setLineDash([Math.max(4, outW*0.006), Math.max(4, outW*0.006)]);
+      octx.lineWidth = Math.max(1, outW * 0.0015);
+      for(let i=1;i<GRID;i++){
+        const x = newColBounds[i];
+        octx.beginPath(); octx.moveTo(x,0); octx.lineTo(x,outH); octx.stroke();
+        const y = newRowBounds[i];
+        octx.beginPath(); octx.moveTo(0,y); octx.lineTo(outW,y); octx.stroke();
+      }
+      octx.restore();
+    }
+
+    // mirror to visible preview canvas
+    previewCanvas.width = outW;
+    previewCanvas.height = outH;
+    pctx.clearRect(0,0,outW,outH);
+    pctx.drawImage(outCanvas, 0, 0);
+
+    outSizeEl.textContent = outW + ' × ' + outH + ' px';
+  }
+
+  function loadFile(file){
+    if(!file || file.type !== 'image/png'){
+      alert('背景透明のPNGファイルを選択してください。');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        srcW = img.naturalWidth;
+        srcH = img.naturalHeight;
+
+        const sourceCanvas = document.createElement('canvas');
+        sourceCanvas.width = srcW;
+        sourceCanvas.height = srcH;
+        sourceCanvas.getContext('2d').drawImage(img, 0, 0);
+
+        extractCells(sourceCanvas);
+
+        origSizeEl.textContent = srcW + ' × ' + srcH + ' px';
+        fileNameEl.textContent = file.name;
+        filebar.style.display = 'flex';
+
+        controlsCard.classList.remove('disabled-card');
+        previewCard.classList.remove('disabled-card');
+        placeholder.style.display = 'none';
+        previewCanvas.style.display = 'block';
+        saveBtn.disabled = false;
+
+        spacingSlider.value = 100;
+        spacingVal.textContent = '100%';
+        render();
+      };
+      img.onerror = () => alert('画像の読み込みに失敗しました。');
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // events
+  dropzone.addEventListener('click', () => fileInput.click());
+  changeBtn.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', e => {
+    if(e.target.files && e.target.files[0]) loadFile(e.target.files[0]);
+  });
+
+  ['dragover','dragenter'].forEach(ev => dropzone.addEventListener(ev, e => {
+    e.preventDefault(); dropzone.classList.add('drag');
+  }));
+  ['dragleave','drop'].forEach(ev => dropzone.addEventListener(ev, e => {
+    e.preventDefault(); dropzone.classList.remove('drag');
+  }));
+  dropzone.addEventListener('drop', e => {
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if(f) loadFile(f);
+  });
+
+  spacingSlider.addEventListener('input', () => {
+    spacingVal.textContent = spacingSlider.value + '%';
+    render();
+  });
+  gridToggle.addEventListener('change', render);
+
+  const saveModal = document.getElementById('saveModal');
+  const modalClose = document.getElementById('modalClose');
+  const saveImage = document.getElementById('saveImage');
+  const downloadLink = document.getElementById('downloadLink');
+  const shareBtn = document.getElementById('shareBtn');
+  const saveInstruction = document.getElementById('saveInstruction');
+
+  function isIOS(){
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  }
+
+  function isStandalone(){
+    return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  }
+
+  // hide "add to home screen" instructions once already installed
+  if(isStandalone()){
+    const a2hs = document.getElementById('a2hsCard');
+    if(a2hs) a2hs.style.display = 'none';
+  }
+
+  saveBtn.addEventListener('click', () => {
+    // re-render once without the guide grid for the actual export
+    const showGrid = gridToggle.checked;
+    gridToggle.checked = false;
+    render();
+    const filename = 'stamp_spaced_' + spacingSlider.value + 'pct.png';
+
+    outCanvas.toBlob(blob => {
+      const url = URL.createObjectURL(blob);
+      saveImage.src = url;
+      downloadLink.href = url;
+      downloadLink.download = filename;
+
+      saveInstruction.textContent = isIOS()
+        ? '画像を長押しして「写真に保存」をタップすると、写真フォルダに保存できます。'
+        : '画像を長押しすると保存メニューが出ます。うまくいかない場合は下の「ファイルとしてダウンロード」をお使いください。';
+
+      // optional: native share sheet, if the browser allows it
+      shareBtn.style.display = 'none';
+      if(navigator.canShare){
+        blob.arrayBuffer().then(buf => {
+          try{
+            const file = new File([buf], filename, { type: 'image/png' });
+            if(navigator.canShare({ files: [file] })){
+              shareBtn.style.display = 'block';
+              shareBtn.onclick = () => {
+                navigator.share({ files: [file], title: filename }).catch(()=>{});
+              };
+            }
+          }catch(err){ /* share unsupported here, ignore */ }
+        });
+      }
+
+      saveModal.classList.add('show');
+      gridToggle.checked = showGrid;
+      render();
+    }, 'image/png');
+  });
+
+  modalClose.addEventListener('click', () => {
+    saveModal.classList.remove('show');
+  });
+  saveModal.addEventListener('click', e => {
+    if(e.target === saveModal) saveModal.classList.remove('show');
+  });
+
+  // register service worker for offline use (relative path -> works under any GitHub Pages subpath)
+  if('serviceWorker' in navigator){
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(()=>{ /* offline support is optional */ });
+    });
+  }
+})();
+</script>
+</body>
+</html>
