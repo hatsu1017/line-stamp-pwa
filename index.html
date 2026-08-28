@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="スタンプ余白">
-<meta name="description" content="LINEスタンプ用5×5・25マスの透明PNGを、大きさそのままで間隔だけ広げるツール。画像処理はすべて端末内で完結します。">
+<meta name="description" content="複数のスタンプが並んだ背景透明PNGを、自動または行列指定で検出し、大きさそのままで間隔だけ広げるツール。画像処理はすべて端末内で完結します。">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="apple-touch-icon" sizes="152x152" href="icons/icon-152.png">
 <link rel="apple-touch-icon" sizes="167x167" href="icons/icon-167.png">
@@ -480,7 +480,7 @@
       <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3L4 6.5V11C4 15.5 7.4 19.7 12 21C16.6 19.7 20 15.5 20 11V6.5L12 3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       画像は端末内だけで処理・送信されません
     </div>
-    <p>5×5・25個のスタンプが並んだ透明PNGを、大きさそのままで間隔だけ広げます。スタンプ自体の拡大・縮小・生成は行いません。</p>
+    <p>複数のスタンプが並んだ透明PNGを自動検出し、大きさそのままで間隔だけ広げます。16個・20個・25個など、5×5以外の配置にも対応します。</p>
   </header>
 
   <!-- 1. upload -->
@@ -494,7 +494,7 @@
         </svg>
       </div>
       <div class="main">タップして画像を選択</div>
-      <div class="sub">5×5・25マスの背景透明PNG</div>
+      <div class="sub">複数スタンプが並んだ背景透明PNG</div>
     </div>
     <input type="file" id="fileInput" accept="image/png">
     <div class="filebar" id="filebar" style="display:none;">
@@ -505,7 +505,26 @@
 
   <!-- 2. slider -->
   <div class="card disabled-card" id="controlsCard">
-    <div class="section-title"><span class="num">2</span>余白の広さ</div>
+    <div class="section-title"><span class="num">2</span>配置と余白</div>
+    <div class="sizes" style="margin-top:0;margin-bottom:16px;">
+      <div class="size-box">
+        <div class="label">行数</div>
+        <select id="rowSelect" style="width:100%;font-size:16px;padding:8px;border:1px solid #ddd3c2;border-radius:10px;background:#fff;">
+          <option value="auto">自動</option>
+          <option value="1">1行</option><option value="2">2行</option><option value="3">3行</option><option value="4">4行</option>
+          <option value="5">5行</option><option value="6">6行</option><option value="7">7行</option><option value="8">8行</option>
+        </select>
+      </div>
+      <div class="size-box">
+        <div class="label">列数</div>
+        <select id="colSelect" style="width:100%;font-size:16px;padding:8px;border:1px solid #ddd3c2;border-radius:10px;background:#fff;">
+          <option value="auto">自動</option>
+          <option value="1">1列</option><option value="2">2列</option><option value="3">3列</option><option value="4">4列</option>
+          <option value="5">5列</option><option value="6">6列</option><option value="7">7列</option><option value="8">8列</option>
+        </select>
+      </div>
+    </div>
+    <div class="hint" id="detectedInfo" style="margin-top:-6px;margin-bottom:16px;">画像を選ぶと配置を自動検出します。</div>
     <div class="slider-row">
       <input type="range" id="spacingSlider" min="100" max="200" step="20" value="100">
       <div class="slider-val" id="spacingVal">100%</div>
@@ -584,8 +603,8 @@
 
 <script>
 (function(){
-  const GRID = 5;
   const ALPHA_THRESHOLD = 10;
+  const MAX_AUTO_GRID = 8;
 
   const fileInput = document.getElementById('fileInput');
   const dropzone = document.getElementById('dropzone');
@@ -597,6 +616,9 @@
   const previewCard = document.getElementById('previewCard');
   const spacingSlider = document.getElementById('spacingSlider');
   const spacingVal = document.getElementById('spacingVal');
+  const rowSelect = document.getElementById('rowSelect');
+  const colSelect = document.getElementById('colSelect');
+  const detectedInfo = document.getElementById('detectedInfo');
   const origSizeEl = document.getElementById('origSize');
   const outSizeEl = document.getElementById('outSize');
 
@@ -612,13 +634,57 @@
   const octx = outCanvas.getContext('2d');
 
   let srcW = 0, srcH = 0;
-  let cells = [];   // { row, col, canvas, w, h }  -- canvas holds only the trimmed stamp pixels at native resolution
+  let cells = [];
+  let sourceCanvasCache = null;
+  let activeRows = 1, activeCols = 1;
 
-  function boundsFor(total){
+  function boundsFor(total, parts){
     const arr = [0];
-    for(let i=1;i<GRID;i++) arr.push(Math.round(total * i / GRID));
+    for(let i=1;i<parts;i++) arr.push(Math.round(total * i / parts));
     arr.push(total);
     return arr;
+  }
+
+  function inferParts(data, width, height, axis){
+    const total = axis === 'x' ? width : height;
+    const cross = axis === 'x' ? height : width;
+    const occ = new Uint32Array(total);
+
+    if(axis === 'x'){
+      for(let y=0;y<height;y++) for(let x=0;x<width;x++) if(data[(y*width+x)*4+3] > ALPHA_THRESHOLD) occ[x]++;
+    }else{
+      for(let y=0;y<height;y++){
+        let n=0;
+        for(let x=0;x<width;x++) if(data[(y*width+x)*4+3] > ALPHA_THRESHOLD) n++;
+        occ[y]=n;
+      }
+    }
+
+    const sparseLimit = Math.max(1, Math.floor(cross * 0.003));
+    const minGap = Math.max(4, Math.floor(total * 0.008));
+    const gaps = [];
+    let start = -1;
+    for(let i=0;i<=total;i++){
+      const sparse = i < total && occ[i] <= sparseLimit;
+      if(sparse && start < 0) start = i;
+      if((!sparse || i===total) && start >= 0){
+        const end = i-1;
+        if(end-start+1 >= minGap && start > 0 && end < total-1) gaps.push({start,end,len:end-start+1,center:(start+end)/2});
+        start = -1;
+      }
+    }
+
+    if(gaps.length === 0) return 1;
+    const selected = gaps.sort((a,b)=>b.len-a.len).slice(0, MAX_AUTO_GRID-1).sort((a,b)=>a.center-b.center);
+    return Math.max(1, Math.min(MAX_AUTO_GRID, selected.length + 1));
+  }
+
+  function resolveGrid(sourceCanvas){
+    const data = sourceCanvas.getContext('2d').getImageData(0,0,srcW,srcH).data;
+    const autoRows = inferParts(data, srcW, srcH, 'y');
+    const autoCols = inferParts(data, srcW, srcH, 'x');
+    activeRows = rowSelect.value === 'auto' ? autoRows : Number(rowSelect.value);
+    activeCols = colSelect.value === 'auto' ? autoCols : Number(colSelect.value);
   }
 
   // Find connected regions of non-transparent pixels (8-connectivity),
@@ -685,14 +751,13 @@
     const data = imgData.data;
 
     const components = findComponents(data, srcW, srcH);
+    resolveGrid(sourceCanvas);
 
-    // nominal 5x5 centers, used only to decide which of the 25 stamps
-    // each detected shape belongs to (not used to crop pixels)
-    const colB = boundsFor(srcW);
-    const rowB = boundsFor(srcH);
+    const colB = boundsFor(srcW, activeCols);
+    const rowB = boundsFor(srcH, activeRows);
     const centers = [];
-    for(let row=0; row<GRID; row++){
-      for(let col=0; col<GRID; col++){
+    for(let row=0; row<activeRows; row++){
+      for(let col=0; col<activeCols; col++){
         centers.push({
           row, col,
           x: (colB[col] + colB[col+1]) / 2,
@@ -701,7 +766,7 @@
       }
     }
 
-    // group components by nearest nominal center -> up to 25 groups.
+    // group components by nearest nominal center -> one group per occupied stamp position.
     // pieces belonging to one stamp (separate letters, dots, strokes) will
     // all be nearest to the same center and end up in the same group.
     const groups = new Map(); // key "row-col" -> {row,col,minX,minY,maxX,maxY}
@@ -738,6 +803,14 @@
       );
       cells.push({ row: g.row, col: g.col, canvas: stampCanvas, w: bw, h: bh });
     });
+
+    detectedInfo.textContent = `検出結果：${activeRows}行 × ${activeCols}列 / スタンプ ${cells.length}個`;
+  }
+
+  function reprocess(){
+    if(!sourceCanvasCache) return;
+    extractCells(sourceCanvasCache);
+    render();
   }
 
   function render(){
@@ -751,8 +824,8 @@
     outCanvas.height = outH;
     octx.clearRect(0,0,outW,outH);
 
-    const newColBounds = boundsFor(outW);
-    const newRowBounds = boundsFor(outH);
+    const newColBounds = boundsFor(outW, activeCols);
+    const newRowBounds = boundsFor(outH, activeRows);
 
     cells.forEach(cell => {
       const nx0 = newColBounds[cell.col], nx1 = newColBounds[cell.col+1];
@@ -771,9 +844,11 @@
       octx.strokeStyle = 'rgba(255,107,94,0.55)';
       octx.setLineDash([Math.max(4, outW*0.006), Math.max(4, outW*0.006)]);
       octx.lineWidth = Math.max(1, outW * 0.0015);
-      for(let i=1;i<GRID;i++){
+      for(let i=1;i<activeCols;i++){
         const x = newColBounds[i];
         octx.beginPath(); octx.moveTo(x,0); octx.lineTo(x,outH); octx.stroke();
+      }
+      for(let i=1;i<activeRows;i++){
         const y = newRowBounds[i];
         octx.beginPath(); octx.moveTo(0,y); octx.lineTo(outW,y); octx.stroke();
       }
@@ -805,6 +880,7 @@
         sourceCanvas.width = srcW;
         sourceCanvas.height = srcH;
         sourceCanvas.getContext('2d').drawImage(img, 0, 0);
+        sourceCanvasCache = sourceCanvas;
 
         extractCells(sourceCanvas);
 
@@ -851,6 +927,8 @@
     render();
   });
   gridToggle.addEventListener('change', render);
+  rowSelect.addEventListener('change', reprocess);
+  colSelect.addEventListener('change', reprocess);
 
   const saveModal = document.getElementById('saveModal');
   const modalClose = document.getElementById('modalClose');
