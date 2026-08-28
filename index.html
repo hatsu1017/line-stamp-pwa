@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="スタンプ余白">
-<meta name="description" content="複数のスタンプが並んだ背景透明PNGを、自動または行列指定で検出し、大きさそのままで間隔だけ広げるツール。画像処理はすべて端末内で完結します。">
+<meta name="description" content="複数のスタンプが並んだ背景透明PNGを、自動または行列指定で検出し、離れた飾りや部品もまとめて大きさそのままで間隔だけ広げるツール。画像処理はすべて端末内で完結します。">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="apple-touch-icon" sizes="152x152" href="icons/icon-152.png">
 <link rel="apple-touch-icon" sizes="167x167" href="icons/icon-167.png">
@@ -750,11 +750,14 @@
     const imgData = sctx.getImageData(0, 0, srcW, srcH);
     const data = imgData.data;
 
-    const components = findComponents(data, srcW, srcH);
+    const components = findComponents(data, srcW, srcH)
+      .filter(c => c.count >= 2); // ignore one-pixel alpha noise
     resolveGrid(sourceCanvas);
 
     const colB = boundsFor(srcW, activeCols);
     const rowB = boundsFor(srcH, activeRows);
+    const cellW = srcW / activeCols;
+    const cellH = srcH / activeRows;
     const centers = [];
     for(let row=0; row<activeRows; row++){
       for(let col=0; col<activeCols; col++){
@@ -766,45 +769,111 @@
       }
     }
 
-    // group components by nearest nominal center -> one group per occupied stamp position.
-    // pieces belonging to one stamp (separate letters, dots, strokes) will
-    // all be nearest to the same center and end up in the same group.
-    const groups = new Map(); // key "row-col" -> {row,col,minX,minY,maxX,maxY}
-    components.forEach(c => {
-      let best = -1, bestDist = Infinity;
+    function nearestCenter(c){
+      let best = 0, bestDist = Infinity;
       for(let i=0; i<centers.length; i++){
-        const d = (c.cx-centers[i].x)**2 + (c.cy-centers[i].y)**2;
+        const dx = (c.cx-centers[i].x) / cellW;
+        const dy = (c.cy-centers[i].y) / cellH;
+        const d = dx*dx + dy*dy;
         if(d < bestDist){ bestDist = d; best = i; }
       }
-      const center = centers[best];
+      return centers[best];
+    }
+
+    // 1) Roughly place every connected component in its nearest grid slot.
+    // 2) Pick ONE dominant component (anchor) per occupied slot.
+    // 3) Re-attach all detached pieces (flowers, letters, dots, bicycle parts, etc.)
+    //    to the nearest anchor by EDGE distance, not merely by their own centroid.
+    // This prevents a separated decoration from being stolen by the next stamp.
+    const rough = new Map();
+    components.forEach((c, idx) => {
+      const center = nearestCenter(c);
+      c._roughRow = center.row;
+      c._roughCol = center.col;
+      c._idx = idx;
       const key = center.row + '-' + center.col;
-      if(!groups.has(key)){
-        groups.set(key, { row: center.row, col: center.col, minX: c.minX, minY: c.minY, maxX: c.maxX, maxY: c.maxY });
-      } else {
-        const g = groups.get(key);
-        if(c.minX < g.minX) g.minX = c.minX;
-        if(c.minY < g.minY) g.minY = c.minY;
-        if(c.maxX > g.maxX) g.maxX = c.maxX;
-        if(c.maxY > g.maxY) g.maxY = c.maxY;
+      if(!rough.has(key)) rough.set(key, []);
+      rough.get(key).push(c);
+    });
+
+    const anchors = [];
+    rough.forEach((list, key) => {
+      // Prefer a visually substantial component. Area is more stable than bbox size.
+      list.sort((a,b) => b.count - a.count);
+      const a = list[0];
+      anchors.push({
+        row: a._roughRow, col: a._roughCol,
+        comp: a,
+        minX: a.minX, minY: a.minY, maxX: a.maxX, maxY: a.maxY,
+        components: [a]
+      });
+    });
+
+    function bboxGapSq(c, a){
+      // distance between bounding rectangles (0 if they overlap on an axis)
+      const dx = c.maxX < a.minX ? a.minX - c.maxX : (a.maxX < c.minX ? c.minX - a.maxX : 0);
+      const dy = c.maxY < a.minY ? a.minY - c.maxY : (a.maxY < c.minY ? c.minY - a.maxY : 0);
+      return (dx/cellW)*(dx/cellW) + (dy/cellH)*(dy/cellH);
+    }
+
+    const anchorIds = new Set(anchors.map(a => a.comp._idx));
+    components.forEach(c => {
+      if(anchorIds.has(c._idx)) return;
+      let bestAnchor = null, bestScore = Infinity;
+      for(const a of anchors){
+        let score = bboxGapSq(c, a);
+        // Small preference for staying in the same nominal slot, without forcing it.
+        if(c._roughRow !== a.row) score += 0.12;
+        if(c._roughCol !== a.col) score += 0.12;
+        // Prefer larger/closer anchors for tiny detached decorations.
+        const acx = (a.minX + a.maxX) / 2, acy = (a.minY + a.maxY) / 2;
+        const cdx = (c.cx - acx) / cellW, cdy = (c.cy - acy) / cellH;
+        score += 0.08 * (cdx*cdx + cdy*cdy);
+        if(score < bestScore){ bestScore = score; bestAnchor = a; }
+      }
+      if(bestAnchor){
+        bestAnchor.components.push(c);
+        bestAnchor.minX = Math.min(bestAnchor.minX, c.minX);
+        bestAnchor.minY = Math.min(bestAnchor.minY, c.minY);
+        bestAnchor.maxX = Math.max(bestAnchor.maxX, c.maxX);
+        bestAnchor.maxY = Math.max(bestAnchor.maxY, c.maxY);
       }
     });
 
-    groups.forEach(g => {
+    // Build each stamp pixel-perfectly from ONLY its assigned components.
+    // We do not crop a rectangular slice from the source, because that could include
+    // pixels belonging to a neighboring stamp when two drawings overlap in X/Y.
+    for(const g of anchors){
       const bw = g.maxX - g.minX + 1;
       const bh = g.maxY - g.minY + 1;
       const stampCanvas = document.createElement('canvas');
       stampCanvas.width = bw;
       stampCanvas.height = bh;
-      // draw straight from the source canvas, pixel-for-pixel, no scaling
-      stampCanvas.getContext('2d').drawImage(
-        sourceCanvas,
-        g.minX, g.minY, bw, bh,
-        0, 0, bw, bh
-      );
-      cells.push({ row: g.row, col: g.col, canvas: stampCanvas, w: bw, h: bh });
-    });
+      const tctx = stampCanvas.getContext('2d');
+      const out = tctx.createImageData(bw, bh);
+      const od = out.data;
 
-    detectedInfo.textContent = `検出結果：${activeRows}行 × ${activeCols}列 / スタンプ ${cells.length}個`;
+      for(const c of g.components){
+        for(let y=c.minY; y<=c.maxY; y++){
+          for(let x=c.minX; x<=c.maxX; x++){
+            const si = (y*srcW+x)*4;
+            if(data[si+3] <= ALPHA_THRESHOLD) continue;
+            // Only copy pixels that belong to this component's bbox region.
+            // Neighboring components will be copied by their own assigned group.
+            const di = ((y-g.minY)*bw + (x-g.minX))*4;
+            // Source-over is unnecessary because this is the original pixel.
+            if(data[si+3] >= od[di+3]){
+              od[di] = data[si]; od[di+1] = data[si+1]; od[di+2] = data[si+2]; od[di+3] = data[si+3];
+            }
+          }
+        }
+      }
+      tctx.putImageData(out, 0, 0);
+      cells.push({ row: g.row, col: g.col, canvas: stampCanvas, w: bw, h: bh });
+    }
+
+    cells.sort((a,b) => a.row-b.row || a.col-b.col);
+    detectedInfo.textContent = `検出結果：${activeRows}行 × ${activeCols}列 / スタンプ ${cells.length}個（離れた部品もまとめて判定）`;
   }
 
   function reprocess(){

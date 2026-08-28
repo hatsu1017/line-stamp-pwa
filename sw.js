@@ -3,7 +3,7 @@
 // 画像処理はもともと全て端末内(このスクリプト内)で完結しており、
 // ここでもネットワーク上のサーバーへ画像を送る処理は一切行わない。
 
-const CACHE_NAME = 'stamp-tool-v2';
+const CACHE_NAME = 'line-stamp-pwa-v3';
 const APP_SHELL = [
   './',
   './index.html',
